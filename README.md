@@ -12,7 +12,7 @@ bash scripts/setup.sh            # Windows: powershell -ExecutionPolicy Bypass -
 uv run clipcutter serve          # open http://localhost:8787
 ```
 
-Full guide for macOS, Windows and Linux: **[docs/SETUP.md](docs/SETUP.md)**
+Full guide for macOS, Windows and Linux: **[docs/SETUP.md](docs/SETUP.md)** · 📄 [PDF version](docs/ClipCutter-Setup-Guide.pdf)
 
 ---
 
