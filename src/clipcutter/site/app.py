@@ -323,6 +323,7 @@ def video(key: str, user=Depends(current_user)):
     d["clips"] = [{**dict(c), "opts": json.loads(c["opts"]) if c["opts"] else None} for c in clips]
     d["has_captions"] = bool(a and a.get("subs_file"))
     d["frames"] = (_video_dir(key) / "frames").is_dir()
+    d["facecam"] = (a or {}).get("facecam")
     lang = (a or {}).get("language") or ""
     hindi = lang.startswith("hi") or any("\u0900" <= ch <= "\u097f" for m in (a or {}).get("moments", [])[:3]
                                          for ch in m["transcript"][:200])
@@ -355,7 +356,7 @@ def _opts(c: NewClip) -> str | None:
             raise HTTPException(400, f"Clips must be between 5 and {int(MAX_MAIN)} seconds (plus the hook), "
                                      "so they fit Reels, Shorts and TikTok.")
         o["start"], o["end"] = round(c.start, 2), round(c.end, 2)
-    if c.layout in ("auto", "blur", "crop", "split"):
+    if c.layout in ("auto", "blur", "crop", "split", "split_top"):
         o["layout"] = c.layout
     if c.captions is False:
         o["captions"] = False

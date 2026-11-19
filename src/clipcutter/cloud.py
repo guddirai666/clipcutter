@@ -124,6 +124,13 @@ def analyze_url(url: str, cfg: dict, cache: Path, n_moments: int = 12, progress:
         result["frames"] = save_frames(info, moments, cache / "frames")
     except Exception:
         result["frames"] = 0
+    result["facecam"] = None
+    if result["frames"] >= 4:
+        try:
+            from .facecam import detect_files
+            result["facecam"] = detect_files(sorted((cache / "frames").glob("*.jpg")))
+        except Exception:
+            pass
     done.write_text(json.dumps(result, ensure_ascii=False))
     progress(f"{len(moments)} moments found", 100)
     return result
@@ -179,8 +186,10 @@ def render_moment(analysis: dict, moment: dict, cfg: dict, cache: Path, out: Pat
                   watermark: str | None = None, progress: Progress = _noop, opts: dict | None = None) -> dict:
     """Download just this moment's section (stream copy, cached) and render the 9:16 clip."""
     moment = apply_edits(analysis, moment, opts)
-    if opts and opts.get("layout") in ("auto", "blur", "crop", "split"):
+    if opts and opts.get("layout") in ("auto", "blur", "crop", "split", "split_top"):
         cfg = {**cfg, "layout": opts["layout"]}
+    if analysis.get("facecam") and cfg.get("layout", "auto") in ("auto", "split", "split_top"):
+        cfg = {**cfg, "facecam": analysis["facecam"]}
     if opts and opts.get("captions") is False:
         cfg = {**cfg, "captions": {**cfg["captions"], "enabled": False}}
     if opts and opts.get("cap_lang") == "original":

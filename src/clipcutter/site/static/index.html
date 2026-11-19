@@ -176,7 +176,20 @@ footer a{color:var(--mut);text-decoration:none}footer a:hover{color:var(--txt)}
 .reel .bg{position:absolute;inset:-30px;background:center/cover;filter:blur(18px) brightness(.5);transform:scale(1.1)}
 .reel .band{position:absolute;left:-15%;width:130%;top:50%;transform:translateY(-50%);aspect-ratio:16/9;background:center/cover;overflow:hidden}
 .reel.crop .band{height:100%;width:auto;aspect-ratio:16/9;left:50%;transform:translate(-50%,-50%)}
+.reel .face{display:none;position:absolute;left:0;right:0;background-repeat:no-repeat;border-top:2px solid rgba(0,0,0,.6)}
+.reel.split .band,.reel.split_top .band{height:65%;width:auto;aspect-ratio:16/9;left:50%;transform:translateX(-50%);top:0}
+.reel.split_top .band{top:35%}
+.reel.split .face,.reel.split_top .face{display:block;height:35%}
+.reel.split .face{bottom:0}.reel.split_top .face{top:0;border-top:0;border-bottom:2px solid rgba(0,0,0,.6)}
+.reel.split_top .hk{top:35%}
 .reel .band iframe{position:absolute;inset:0;width:100%;height:100%;border:0}
+/* clean preview: YouTube's own UI (title bar, logo, end screen) is cropped out and covered until the video plays */
+.reel .band .yt{position:absolute;inset:0;overflow:hidden}
+.reel .band .yt iframe{position:absolute;inset:auto;width:150%;height:150%;left:-25%;top:-25%;pointer-events:none}
+.reel .band .cover{position:absolute;inset:0;background:inherit;background-size:cover;background-position:center;transition:opacity .3s;z-index:2}
+.reel .band .cover.off{opacity:0;pointer-events:none}
+.reel .band .cover .spin{position:absolute;left:50%;top:50%;margin:-8px 0 0 -8px}
+.reel.paused .playb{display:grid!important}
 .reel .hk{position:absolute;left:50%;top:24.5%;transform:translate(-50%,-50%);background:#fff;color:#000;font-weight:900;border-radius:9px;padding:5px 9px;font-size:clamp(11px,3.4cqw,15px);width:max-content;max-width:76%;text-align:center;line-height:1.2;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.35)}
 .reel .cap{position:absolute;left:12%;right:12%;top:63.5%;transform:translateY(-50%);text-align:center;font-weight:900;font-size:clamp(13px,5cqw,20px);color:#fff;pointer-events:none;
   text-shadow:0 2px 0 #000,0 -2px 0 #000,2px 0 0 #000,-2px 0 0 #000;line-height:1.15}
@@ -663,20 +676,27 @@ function frameBg(v, m){   // the moment's real frame, falling back to the video 
   const t = `url('${esc(thumbOf(v))}')`;
   return v.frames ? `url('/api/videos/${encodeURIComponent(v.key)}/frame/${m.id}.jpg'), ${t}` : t;
 }
+function faceStyle(v, m){   // show only the facecam box of the frame (background-size/position math)
+  if (!v.facecam) return "";
+  const [x, y, w, h] = v.facecam;
+  const px = w >= 1 ? 0 : x / (1 - w) * 100, py = h >= 1 ? 0 : y / (1 - h) * 100;
+  return `background-image:${frameBg(v, m)};background-size:${100 / w}% auto;background-position:${px}% ${py}%`;
+}
+function layoutOf(v, chosen){ return chosen && chosen !== "auto" ? chosen : (v.facecam ? "split" : "blur"); }
 function reelHTML(v, m, opts = {}){
   const words = (opts.text ?? capText(m, capLangOf(v)) ?? m.transcript ?? "").split(/\s+/).filter(Boolean).slice(0, 3);
   const showCap = opts.capOn ?? capPref.on;
   const cap = `<div class="cap" style="${showCap ? "" : "display:none"}">${words.slice(0, 2).map(esc).join(" ")} <b>${esc(words[2] || "")}</b></div>`;
   const bg = frameBg(v, m);
   return `<div class="bg" style="background-image:${bg}"></div>
-    <div class="band" style="background-image:${bg}"></div>
+    <div class="band" style="background-image:${bg}"></div><div class="face" style="${faceStyle(v, m)}"></div>
     <div class="hk">${esc(opts.hook ?? m.hook)}</div>${cap}
     <div class="ui"><span>♥</span><span>💬</span><span>↗</span><span>⋯</span></div>
     <div class="ub">@yourpage · Reel<i></i><i></i></div>`;
 }
 function moCard(v, m){
   return `<div class="mo">
-    <div class="reel" id="pv${m.id}" role="button" aria-label="Preview moment">${reelHTML(v, m)}
+    <div class="reel ${layoutOf(v)}" id="pv${m.id}" role="button" aria-label="Preview moment">${reelHTML(v, m)}
       <div class="playb"><i></i></div>
       <div class="vb ${vbCls(m.virality)}">🔥 ${m.virality}</div><div class="tm">${Math.round(m.end - m.start + 2.5)}s</div></div>
     <div class="b">
@@ -684,13 +704,49 @@ function moCard(v, m){
       ${m.signals && m.signals.length ? `<div class="sigs">${m.signals.map(s => `<span>${SIG[s]||s}</span>`).join("")}</div>` : ""}
       <div class="acts" id="act${m.id}"></div></div></div>`;
 }
+/* ---- clean YouTube preview: no title bar, logo, "more videos" or end screen ever shows ---- */
+const YT = {n: 0, players: {}};
+addEventListener("message", e => {
+  if (!/youtube(-nocookie)?\.com$/.test(new URL(e.origin).hostname)) return;
+  let d; try { d = typeof e.data === "string" ? JSON.parse(e.data) : e.data; } catch(err) { return; }
+  const p = d && YT.players[d.id]; if (!p) return;
+  const state = d.event === "onStateChange" ? d.info : (d.info && d.info.playerState);
+  if (state === undefined || state === null || state === p.state) return;
+  p.state = state; p.onState(state);
+});
+function mountYT(band, reel, vid, start, end){
+  const id = ++YT.n;
+  const src = `https://www.youtube-nocookie.com/embed/${encodeURIComponent(vid)}?start=${Math.floor(start)}&end=${Math.ceil(end)}` +
+    `&autoplay=1&playsinline=1&controls=0&disablekb=1&fs=0&iv_load_policy=3&rel=0&modestbranding=1&enablejsapi=1` +
+    `&origin=${encodeURIComponent(location.origin)}&widgetid=${id}`;
+  band.innerHTML = `<div class="yt"><iframe allow="autoplay; encrypted-media" title="Preview" src="${src}"></iframe></div>
+    <div class="cover"><span class="spin"></span></div>`;
+  const iframe = band.querySelector("iframe"), cover = band.querySelector(".cover");
+  const cmd = (func, args = []) => iframe.contentWindow?.postMessage(JSON.stringify({event:"command", func, args, id}), "*");
+  let showT = null;
+  const p = YT.players[id] = {state: -1, onState(s){
+    clearTimeout(showT);
+    if (s === 1) {                       // playing: reveal after YouTube's start-up overlay has faded
+      showT = setTimeout(() => cover.classList.add("off"), 1400);
+      reel.classList.add("playing"); reel.classList.remove("paused");
+    } else if (s === 2 || s === 0) {     // paused / ended: cover again (hides "more videos" + end screen)
+      cover.classList.remove("off"); cover.querySelector(".spin")?.remove();
+      reel.classList.add("paused");
+    }
+  }};
+  iframe.addEventListener("load", () => iframe.contentWindow.postMessage(JSON.stringify({event:"listening", id, channel:"widget"}), "*"));
+  reel.onclick = () => {
+    if (p.state === 1) cmd("pauseVideo");
+    else if (p.state === 0) { cmd("seekTo", [Math.floor(start), true]); cmd("playVideo"); }
+    else cmd("playVideo");
+  };
+  return {destroy(){ delete YT.players[id]; }};
+}
 function preview(v, m){
   if (!v.key.startsWith("youtube_")) { window.open(v.url, "_blank", "noopener"); return; }
-  const p = $(`#pv${m.id}`);   // play inside the Reel frame, where the video sits in the real clip
+  const p = $(`#pv${m.id}`);   // plays inside the Reel frame, where the video sits in the real clip
   p.classList.add("playing");
-  p.querySelector(".band").innerHTML = `<iframe allow="autoplay; encrypted-media; picture-in-picture" title="Preview"
-    src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.key.slice(8))}?start=${Math.floor(m.start)}&end=${Math.ceil(m.end)}&autoplay=1&playsinline=1&rel=0&modestbranding=1&controls=0"></iframe>`;
-  p.onclick = null;
+  mountYT(p.querySelector(".band"), p, v.key.slice(8), m.start, m.end);
 }
 let VIDEO = null;   // current video page data (editor needs it)
 const capPref = { get on(){ try { return localStorage.getItem("cc-cap-on") !== "0"; } catch(e) { return true; } },
@@ -749,7 +805,8 @@ function openEditor(id){
         <label class="f" for="edHook">Hook text (first 2 seconds)</label>
         <input type="text" id="edHook" maxlength="90">
         <label class="f">Layout</label>
-        <div class="chips2" id="edLay">${[["auto","✨ Auto"],["blur","Blur"],["crop","Full screen"],["split","Facecam"]].map(([k,l]) => `<button data-l="${k}">${l}</button>`).join("")}</div>
+        <div class="chips2" id="edLay">${[["auto","✨ Auto"],["blur","Blur"],["crop","Full screen"],["split","Game ↑ Face ↓"],["split_top","Face ↑ Game ↓"]].map(([k,l]) => `<button data-l="${k}">${l}</button>`).join("")}</div>
+        ${v.facecam ? "" : `<div class="hint">No facecam spotted in the preview frames. The facecam layouts will look for one when the clip is made, and fall back to Blur.</div>`}
         <label class="f" style="display:flex;justify-content:space-between;align-items:center">Captions
           <span class="chips2"><button id="edCapOn">On</button><button id="edCapOff">Off</button></span></label>
         ${v.hindi ? `<div class="chips2" id="edLang" style="margin-bottom:8px">${(v.cap_langs||[]).map(l => `<button data-l="${l}">${{hinglish:"Hinglish",english:"English",original:"हिन्दी"}[l]}</button>`).join("")}</div>` : ""}
@@ -763,7 +820,8 @@ function openEditor(id){
   hook.value = st.hook; text.value = st.text;
   const paint = () => {
     $("#edPv .hk").textContent = hook.value || " ";
-    $("#edPv").classList.toggle("crop", st.layout === "crop");
+    const lay = layoutOf(v, st.layout);
+    ["crop", "blur", "split", "split_top"].forEach(c => $("#edPv").classList.toggle(c, lay === c));
     const cap = $("#edPv .cap"); if (cap) cap.style.display = st.captions ? "" : "none";
     $("#edS").textContent = fmt(st.start); $("#edE").textContent = fmt(st.end);
     const len = st.end - st.start;
@@ -778,8 +836,7 @@ function openEditor(id){
   let pvT = null;
   const loadPreview = () => { if (!yt) return; clearTimeout(pvT); pvT = setTimeout(() => {
     const f = $("#edPv .band"); if (!f) return;
-    f.innerHTML = `<iframe allow="autoplay; encrypted-media" title="Preview"
-      src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(v.key.slice(8))}?start=${Math.floor(st.start)}&end=${Math.ceil(st.end)}&autoplay=1&playsinline=1&rel=0&modestbranding=1&controls=0"></iframe>`;
+    mountYT(f, $("#edPv"), v.key.slice(8), st.start, st.end);
   }, 500); };
   let txT = null;
   const reloadText = () => { if (st.textEdited) return; clearTimeout(txT); txT = setTimeout(async () => {

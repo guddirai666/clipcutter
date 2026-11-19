@@ -194,8 +194,8 @@ def build_overlay(clip: dict, cfg: dict, out_dir: Path) -> Path:
     total = hook_d + (clip["end"] - clip["start"])
     hook_font = _font(system.bold_font(cfg["captions"].get("font")), 84)
     head_font = _font(system.bold_font(cfg["captions"].get("font")), 52)
-    hook_y = {"blur": 470, "split": 672}.get(cfg["layout"], 620)
-    head_y = {"blur": 330, "split": 740}.get(cfg["layout"], 330)   # below the top ~270 px the apps cover
+    hook_y = {"blur": 470, "split": 470, "split_top": 672}.get(cfg["layout"], 620)
+    head_y = {"blur": 330, "split": 330, "split_top": 740}.get(cfg["layout"], 330)   # below the top ~270 px the apps cover
 
     # caption events in output time
     events = []  # (t0, t1, words_text, active_idx)
@@ -265,13 +265,14 @@ def _layout_filter(cfg: dict, src: dict) -> str:
     vertical = src["width"] < src["height"]
     if layout == "crop" or vertical:
         return f"[cv]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H}[lv]"
-    if layout == "split" and cfg.get("facecam"):
+    if layout in ("split", "split_top") and cfg.get("facecam"):
         x, y, w, h = cfg["facecam"]
         cam_h = int(H * 0.35) // 2 * 2
+        order = "[cam][game]" if layout == "split_top" else "[game][cam]"   # default: gameplay on top, face below
         return (
             f"[cv]split=2[c1][c2];"
             f"[c1]crop=iw*{w}:ih*{h}:iw*{x}:ih*{y},scale={W}:{cam_h}:force_original_aspect_ratio=increase,crop={W}:{cam_h}[cam];"
-            f"[c2]scale=-2:{H - cam_h},crop={W}:{H - cam_h}[game];[cam][game]vstack[lv]"
+            f"[c2]scale=-2:{H - cam_h},crop={W}:{H - cam_h}[game];{order}vstack[lv]"
         )
     fg_w = int(W * 1.3) // 2 * 2
     return (
@@ -294,10 +295,15 @@ def render(clip: dict, src_info: dict, video: Path, cfg: dict, out_path: Path, w
     SW, SH = src_info["width"] // 2 * 2, src_info["height"] // 2 * 2
     z = cfg["hook"]["zoom"]
 
-    if cfg["layout"] == "auto":
-        from .facecam import detect
-        cam = detect(video, clip["start"], clip["end"])
-        cfg = {**cfg, "layout": "split" if cam else "blur", "facecam": cam}
+    if cfg["layout"] in ("auto", "split", "split_top"):
+        cam = cfg.get("facecam")
+        if not cam:
+            from .facecam import detect
+            cam = detect(video, clip["start"], clip["end"])
+        if cfg["layout"] == "auto":
+            cfg = {**cfg, "layout": "split" if cam else "blur", "facecam": cam}
+        else:   # facecam asked for but none found: fall back to the blur layout
+            cfg = {**cfg, "layout": cfg["layout"] if cam else "blur", "facecam": cam}
     clip["layout"] = cfg["layout"]
     overlay = build_overlay(clip, cfg, work)
 
