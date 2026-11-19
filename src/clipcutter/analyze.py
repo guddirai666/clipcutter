@@ -175,6 +175,36 @@ def transcribe_window(pcm: np.ndarray, start: float, end: float, model: str, lan
     return words
 
 
+TRANSLATE_MODEL = "mlx-community/whisper-small-mlx"   # "turbo" models can't translate; small is fast and can
+
+
+def translate_window(pcm: np.ndarray, start: float, end: float) -> list[dict]:
+    """English words (with timings) for speech in any language, via Whisper's translate task."""
+    from .system import whisper_backend
+
+    a, b = max(0, int(start * SR)), int(end * SR)
+    audio = np.asarray(pcm[a:b], dtype=np.float32) / 32768.0
+    if audio.size < SR:
+        return []
+    common = dict(task="translate", word_timestamps=True, condition_on_previous_text=False,
+                  temperature=(0.0, 0.4))
+    words = []
+    if whisper_backend() == "mlx":
+        import mlx_whisper
+        res = mlx_whisper.transcribe(audio, path_or_hf_repo=TRANSLATE_MODEL, verbose=None, **common)
+        for seg in res.get("segments", []):
+            for w in seg.get("words", []):
+                if w["word"].strip():
+                    words.append({"w": w["word"].strip(), "s": round(start + w["start"], 2), "e": round(start + w["end"], 2)})
+    else:
+        segments, _ = _faster_model("small").transcribe(audio, **common)
+        for seg in segments:
+            for w in seg.words or []:
+                if w.word.strip():
+                    words.append({"w": w.word.strip(), "s": round(start + w.start, 2), "e": round(start + w.end, 2)})
+    return words
+
+
 _FW = {}
 
 

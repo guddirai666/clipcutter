@@ -117,6 +117,8 @@ def analyze_url(url: str, cfg: dict, cache: Path, n_moments: int = 12, progress:
                     "chat_available": ingest.has_chat_replay(info)},
         "moments": moments, "created": time.time(),
         "subs_file": str(subs) if subs else None,
+        "subs_en_file": str(e) if (e := ingest.english_subs(cache / "meta", info.get("language"))) else None,
+        "language": info.get("language"),
     }
     try:
         result["frames"] = save_frames(info, moments, cache / "frames")
@@ -129,8 +131,7 @@ def analyze_url(url: str, cfg: dict, cache: Path, n_moments: int = 12, progress:
 
 def apply_edits(analysis: dict, moment: dict, opts: dict | None) -> dict:
     """Editor: custom hook, trimmed start/end, corrected caption text. Keeps word timings where possible."""
-    if not opts:
-        return moment
+    opts = opts or {}
     m = dict(moment)
     T = analysis["duration"]
     if opts.get("hook"):
@@ -148,6 +149,16 @@ def apply_edits(analysis: dict, moment: dict, opts: dict | None) -> dict:
         m["words"] = words
         m["hook_start"] = min(max(m["start"], m["hook_start"]), m["end"] - 1)
     m["hook_dur"] = max(0.5, min(m.get("hook_dur", 2.5), m["end"] - m["hook_start"]))
+    lang = (opts.get("cap_lang") or "auto").lower()
+    ef = analysis.get("subs_en_file")
+    if lang == "english" and opts.get("text") is None:
+        if ef and Path(ef).exists():
+            m["words"] = [w for w in ingest.caption_words(Path(ef)) if m["start"] <= w["s"] < m["end"]]
+        else:
+            m["_translate"] = True   # no YouTube English track: translate this clip's audio when rendering
+    elif lang in ("hinglish", "auto") and opts.get("text") is None:
+        from .translit import hinglish
+        m["words"] = [{**w, "w": hinglish(w["w"])} for w in m["words"]]
     if opts.get("text") is not None:
         toks = str(opts["text"]).split()[:400]
         old = m["words"]
@@ -172,6 +183,8 @@ def render_moment(analysis: dict, moment: dict, cfg: dict, cache: Path, out: Pat
         cfg = {**cfg, "layout": opts["layout"]}
     if opts and opts.get("captions") is False:
         cfg = {**cfg, "captions": {**cfg["captions"], "enabled": False}}
+    if opts and opts.get("cap_lang") == "original":
+        cfg = {**cfg, "captions": {**cfg["captions"], "lang": "original"}}
     a = max(0.0, min(moment["start"], moment["hook_start"]) - 2)
     b = min(analysis["duration"], max(moment["end"], moment["hook_start"] + moment["hook_dur"]) + 2)
     sec = cache / "sections" / f"{int(a * 10)}_{int(b * 10)}.mp4"
@@ -181,6 +194,17 @@ def render_moment(analysis: dict, moment: dict, cfg: dict, cache: Path, out: Pat
         got = ingest.download_section(analysis["url"], a, b, sec)
         if got != sec:
             got.rename(sec)
+    if moment.get("_translate"):
+        progress("Translating captions to English…", 50)
+        try:
+            tw = out.parent / (out.stem + "_work")
+            tw.mkdir(parents=True, exist_ok=True)
+            pcm = analyze.load_audio(sec, tw)
+            words = analyze.translate_window(pcm, 0, analyze.probe(sec)["duration"])
+            moment = {**moment, "words": [{**w, "s": w["s"] + a, "e": w["e"] + a} for w in words
+                                          if moment["start"] <= w["s"] + a < moment["end"]]}
+        except Exception:
+            pass   # keep the original captions rather than fail the clip
     progress("Editing: hook, captions, 9:16…", 55)
     clip = {k: moment[k] for k in ("start", "end", "peak", "hook_start", "hook_dur", "words", "hook")}
     shifted = {**clip, **{k: clip[k] - a for k in ("start", "end", "peak", "hook_start")},

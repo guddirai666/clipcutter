@@ -164,6 +164,8 @@ CAPTION_EMOJI = [
     (r"^(lol|lmao|haha+|hahaha+)$", "😭"), (r"^(dead|died|cooked|rip)$", "💀"),
     (r"^(fire|insane|crazy)$", "🔥"), (r"^(what|how|wait)\??$", "😳"),
     (r"^(bro|bruh)$", "💀"), (r"^(no way|omg)$", "😳"),
+    (r"^(bhai|bhaiyon)$", "💀"), (r"^(kya)\??$", "😳"), (r"^(pagal|pagalpan)$", "🤯"), (r"^(bawaal|bawal)$", "🔥"),
+    (r"^(gazab|kamaal|kamal)$", "🔥"), (r"^(haha+|hahaha+)$", "😭"),
 ]
 
 

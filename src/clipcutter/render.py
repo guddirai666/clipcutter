@@ -200,7 +200,11 @@ def build_overlay(clip: dict, cfg: dict, out_dir: Path) -> Path:
     # caption events in output time
     events = []  # (t0, t1, words_text, active_idx)
     if cfg["captions"]["enabled"]:
-        chunks = caption_chunks(clip["words"], cfg["captions"]["words_per_chunk"], cfg["style"])
+        words = clip["words"]
+        if cfg["captions"].get("lang", "auto") != "original":   # Hindi -> Hinglish (Roman) captions by default
+            from .translit import hinglish
+            words = [{**w, "w": hinglish(w["w"])} for w in words]
+        chunks = caption_chunks(words, cfg["captions"]["words_per_chunk"], cfg["style"])
         for ci, ch in enumerate(chunks):
             chunk_end = chunks[ci + 1][0]["s"] if ci + 1 < len(chunks) else ch[-1]["e"] + 0.4
             chunk_end = min(chunk_end, ch[-1]["e"] + 0.8)

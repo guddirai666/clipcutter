@@ -220,6 +220,8 @@ def fetch_meta(url: str, dest: Path, want_chat: bool = False) -> tuple[dict, Pat
         if lang:  # creator-uploaded captions in the video's language beat auto ones
             ydl.params["subtitleslangs"] = [lang] + langs
         ydl.process_ie_result(info, download=True)
+    if lang and not lang.startswith("en"):
+        fetch_english(url, dest)   # best effort: YouTube rate-limits translated tracks (HTTP 429)
     subs = _pick_subs(dest / "meta.mp4", lang)
     chat = next((p for p in dest.glob("meta.*") if p.name.endswith((".live_chat.json", ".rechat.json"))), None)
     return info, subs, chat
@@ -257,3 +259,29 @@ def fetch_chat(url: str, dest: Path, hook=None) -> Path | None:
         info = ydl.extract_info(url, download=False)
         ydl.process_ie_result(info, download=True)
     return next((p for p in dest.glob("meta.*") if p.name.endswith((".live_chat.json", ".rechat.json"))), None)
+
+
+def fetch_english(url: str, dest: Path) -> Path | None:
+    """YouTube's auto-translated English captions for a non-English video. Never raises:
+    the translated track is often rate-limited, and English captions are optional."""
+    import yt_dlp
+
+    try:
+        opts = _ydl_opts(skip_download=True, writeautomaticsub=True, subtitleslangs=["en"],
+                         subtitlesformat="json3", outtmpl=str(dest / "meta.%(ext)s"), ignoreerrors=True)
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if info:
+                ydl.process_ie_result(info, download=True)
+    except Exception:
+        pass
+    f = dest / "meta.en.json3"
+    return f if f.exists() else None
+
+
+def english_subs(meta_dir: Path, lang: str | None) -> Path | None:
+    """The auto-translated English track saved next to the original captions (non-English videos only)."""
+    if not lang or lang.startswith("en"):
+        return None
+    f = next(iter(sorted(meta_dir.glob("meta.en.json3"))), None)
+    return f

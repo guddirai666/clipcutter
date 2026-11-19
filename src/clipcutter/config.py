@@ -26,6 +26,7 @@ DEFAULTS: dict = {
     "captions": {
         "enabled": True,
         "words_per_chunk": 3,
+        "lang": "auto",         # auto/hinglish: Hindi becomes Roman Hinglish · original: keep the script
         "font": None,           # None = auto (Arial Black on mac/Windows, DejaVu Sans Bold on Linux)
         "size": 88,
         "color": "#FFFFFF",

@@ -307,12 +307,29 @@ def video(key: str, user=Depends(current_user)):
         raise HTTPException(404, "Not found.")
     a = _analysis(key) if row["status"] == "ready" else None
     d = _video_public(row, a)
+    en_words = []
+    if a and a.get("subs_en_file") and Path(a["subs_en_file"]).exists():
+        from .. import ingest
+        en_words = ingest.caption_words(Path(a["subs_en_file"]))
+    from ..translit import hinglish
+
+    def texts(m):
+        orig = " ".join(w["w"] for w in m["words"])
+        return {"text": orig, "text_hinglish": hinglish(orig),
+                "text_en": " ".join(w["w"] for w in en_words if m["start"] <= w["s"] < m["end"]) or None}
     d["moments"] = [{**{k: m[k] for k in ("id", "start", "end", "virality", "hook", "title", "transcript",
-                                          "post_caption", "signals")}, "text": " ".join(w["w"] for w in m["words"])}
+                                          "post_caption", "signals")}, **texts(m)}
                     for m in (a["moments"] if a else [])]
     d["clips"] = [{**dict(c), "opts": json.loads(c["opts"]) if c["opts"] else None} for c in clips]
     d["has_captions"] = bool(a and a.get("subs_file"))
     d["frames"] = (_video_dir(key) / "frames").is_dir()
+    lang = (a or {}).get("language") or ""
+    hindi = lang.startswith("hi") or any("\u0900" <= ch <= "\u097f" for m in (a or {}).get("moments", [])[:3]
+                                         for ch in m["transcript"][:200])
+    has_en = bool(a and a.get("subs_en_file") and Path(a["subs_en_file"]).exists())
+    d["cap_langs"] = (["hinglish", "english", "original"] if hindi else ["original"]) if a else []
+    d["english_track"] = has_en   # False: English captions are translated from the clip's audio (AI, ~20 s)
+    d["hindi"] = hindi
     return d
 
 
@@ -324,6 +341,7 @@ class NewClip(BaseModel):
     end: float | None = None
     layout: str | None = None        # auto | blur | crop | split
     captions: bool | None = None
+    cap_lang: str | None = None      # auto | hinglish | english | original
 
 
 def _opts(c: NewClip) -> str | None:
@@ -341,6 +359,8 @@ def _opts(c: NewClip) -> str | None:
         o["layout"] = c.layout
     if c.captions is False:
         o["captions"] = False
+    if c.cap_lang in ("hinglish", "english", "original"):
+        o["cap_lang"] = c.cap_lang
     return json.dumps(o, ensure_ascii=False) if o else None
 
 
@@ -411,7 +431,7 @@ def clip_file(clip_id: int, download: int = 0, user=Depends(current_user)):
 
 
 @app.get("/api/videos/{key}/text")
-def range_text(key: str, start: float, end: float, user=Depends(current_user)):
+def range_text(key: str, start: float, end: float, lang: str = "auto", user=Depends(current_user)):
     """Caption text for a custom range (editor trims). Only for videos the user added."""
     con = db.connect()
     ok = con.execute("SELECT 1 FROM user_videos WHERE user_id=? AND video_key=?", (user["id"], key)).fetchone()
@@ -422,10 +442,16 @@ def range_text(key: str, start: float, end: float, user=Depends(current_user)):
     if end - start > 120:
         raise HTTPException(400, "Range too long.")
     from .. import ingest
-    sf = a.get("subs_file")
+    sf, ef = a.get("subs_file"), a.get("subs_en_file")
+    if lang == "english" and ef and Path(ef).exists():
+        sf = ef
     words = ingest.caption_words(Path(sf)) if sf and Path(sf).exists() else \
         [w for m in a["moments"] for w in m["words"]]
-    return {"text": " ".join(w["w"] for w in words if start <= w["s"] < end)}
+    text = " ".join(w["w"] for w in words if start <= w["s"] < end)
+    if lang in ("auto", "hinglish") or (lang == "english" and sf != ef):
+        from ..translit import hinglish
+        text = hinglish(text)
+    return {"text": text}
 
 
 @app.get("/api/videos/{key}/frame/{moment_id}.jpg")
