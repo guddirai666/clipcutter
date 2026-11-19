@@ -302,6 +302,7 @@ def video(key: str, user=Depends(current_user)):
                     for m in (a["moments"] if a else [])]
     d["clips"] = [{**dict(c), "opts": json.loads(c["opts"]) if c["opts"] else None} for c in clips]
     d["has_captions"] = bool(a and a.get("subs_file"))
+    d["frames"] = (_video_dir(key) / "frames").is_dir()
     return d
 
 
@@ -415,3 +416,15 @@ def range_text(key: str, start: float, end: float, user=Depends(current_user)):
     words = ingest.caption_words(Path(sf)) if sf and Path(sf).exists() else \
         [w for m in a["moments"] for w in m["words"]]
     return {"text": " ".join(w["w"] for w in words if start <= w["s"] < end)}
+
+
+@app.get("/api/videos/{key}/frame/{moment_id}.jpg")
+def frame(key: str, moment_id: int, user=Depends(current_user)):
+    """The moment's real preview frame (from YouTube's storyboard)."""
+    con = db.connect()
+    ok = con.execute("SELECT 1 FROM user_videos WHERE user_id=? AND video_key=?", (user["id"], key)).fetchone()
+    con.close()
+    f = _video_dir(key) / "frames" / f"{moment_id}.jpg"
+    if not ok or not f.exists():
+        raise HTTPException(404, "No frame.")
+    return FileResponse(f, media_type="image/jpeg", headers={"Cache-Control": "private, max-age=86400"})

@@ -649,11 +649,16 @@ async function videoPage(key){
 }
 const vbCls = x => x >= 85 ? "hi" : x >= 70 ? "mid" : "";
 const SIG = {speech:"🗣️ hype words", chat:"💬 chat spike", replay:"🔁 most replayed", audio:"🔊 loud moment"};
+function frameBg(v, m){   // the moment's real frame, falling back to the video thumbnail
+  const t = `url('${esc(thumbOf(v))}')`;
+  return v.frames ? `url('/api/videos/${encodeURIComponent(v.key)}/frame/${m.id}.jpg'), ${t}` : t;
+}
 function reelHTML(v, m, opts = {}){
   const words = (m.text || m.transcript || "").split(/\s+/).filter(Boolean).slice(0, 3);
   const cap = opts.noCap ? "" : `<div class="cap">${words.slice(0, 2).map(esc).join(" ")} <b>${esc(words[2] || "")}</b></div>`;
-  return `<div class="bg" style="background-image:url('${esc(thumbOf(v))}')"></div>
-    <div class="band" style="background-image:url('${esc(thumbOf(v))}')"></div>
+  const bg = frameBg(v, m);
+  return `<div class="bg" style="background-image:${bg}"></div>
+    <div class="band" style="background-image:${bg}"></div>
     <div class="hk">${esc(opts.hook ?? m.hook)}</div>${cap}
     <div class="ui"><span>♥</span><span>💬</span><span>↗</span><span>⋯</span></div>
     <div class="ub">@yourpage · Reel<i></i><i></i></div>`;

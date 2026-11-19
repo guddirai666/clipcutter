@@ -118,6 +118,10 @@ def analyze_url(url: str, cfg: dict, cache: Path, n_moments: int = 12, progress:
         "moments": moments, "created": time.time(),
         "subs_file": str(subs) if subs else None,
     }
+    try:
+        result["frames"] = save_frames(info, moments, cache / "frames")
+    except Exception:
+        result["frames"] = 0
     done.write_text(json.dumps(result, ensure_ascii=False))
     progress(f"{len(moments)} moments found", 100)
     return result
@@ -186,6 +190,53 @@ def render_moment(analysis: dict, moment: dict, cfg: dict, cache: Path, out: Pat
     render.render(shifted, analyze.probe(sec), sec, rcfg, out, out.parent / (out.stem + "_work"))
     progress("Done", 100)
     return {"layout": shifted.get("layout")}
+
+
+def save_frames(info: dict, moments: list[dict], out: Path) -> int:
+    """Real preview frame per moment from YouTube's storyboard (frame grids, one frame every ~10 s).
+    A few small JPEGs, no video download. Returns how many frames were saved."""
+    import io
+    import urllib.request
+
+    from PIL import Image
+
+    boards = [f for f in info.get("formats") or [] if f.get("format_note") == "storyboard" and f.get("fragments")]
+    if not boards:
+        return 0
+    sb = max(boards, key=lambda f: f.get("width") or 0)      # sharpest: 320x180 tiles
+    fps, rows, cols = sb.get("fps") or 0, sb.get("rows") or 1, sb.get("columns") or 1
+    w, h, frags = sb.get("width"), sb.get("height"), sb["fragments"]
+    if not (fps and w and h):
+        return 0
+    out.mkdir(parents=True, exist_ok=True)
+    sheets: dict[int, Image.Image] = {}
+    saved = 0
+    for m in moments:
+        k = int(m["peak"] * fps)
+        n, cell = divmod(k, rows * cols)
+        if n >= len(frags):
+            n, cell = len(frags) - 1, 0
+        try:
+            if n not in sheets:
+                req = urllib.request.Request(frags[n]["url"], headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    sheets[n] = Image.open(io.BytesIO(r.read())).convert("RGB")
+            r_, c_ = divmod(cell, cols)
+            sheets[n].crop((c_ * w, r_ * h, (c_ + 1) * w, (r_ + 1) * h)).save(out / f"{m['id']}.jpg", quality=88)
+            saved += 1
+        except Exception:
+            continue
+    return saved
+
+
+def backfill_frames(url: str, vdir: Path) -> int:
+    """Add frames to an analysis made before frames existed."""
+    import yt_dlp
+
+    a = json.loads((vdir / "analysis.json").read_text())
+    with yt_dlp.YoutubeDL(ingest._ydl_opts()) as ydl:
+        info = ydl.extract_info(url, download=False)
+    return save_frames(info, a["moments"], vdir / "frames")
 
 
 def _virality(s: float) -> int:
