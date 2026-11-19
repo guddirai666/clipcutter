@@ -30,7 +30,7 @@ DEFAULTS: dict = {
         "size": 88,
         "color": "#FFFFFF",
         "highlight": "#FFE600",
-        "y": 1450,
+        "y": 1220,              # Reels/Shorts safe zone: bottom ~35% is covered by the app's caption + buttons
     },
     "header": True,             # keep hook text as a small header for the whole clip
     "video": {"width": 1080, "height": 1920, "fps": 30, "bitrate": "8M"},

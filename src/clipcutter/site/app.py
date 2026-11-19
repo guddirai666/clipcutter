@@ -23,6 +23,7 @@ STATIC = Path(__file__).with_name("static")
 SECURE_COOKIES = os.environ.get("CLIPCUTTER_SECURE_COOKIES", "0") == "1"
 SESSION_DAYS = 30
 COOKIE = "cc_session"
+MAX_MAIN = 56.0   # + ~2.5 s hook = under 59 s: fits Reels, Shorts and TikTok
 
 app = FastAPI(title="ClipCutter", docs_url=None, redoc_url=None)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
@@ -321,8 +322,9 @@ def _opts(c: NewClip) -> str | None:
     if c.text is not None:
         o["text"] = c.text[:4000]
     if c.start is not None and c.end is not None:
-        if not (0 <= c.start < c.end) or c.end - c.start > 90 or c.end - c.start < 5:
-            raise HTTPException(400, "Clips must be between 5 and 90 seconds.")
+        if not (0 <= c.start < c.end) or c.end - c.start > MAX_MAIN or c.end - c.start < 5:
+            raise HTTPException(400, f"Clips must be between 5 and {int(MAX_MAIN)} seconds (plus the hook), "
+                                     "so they fit Reels, Shorts and TikTok.")
         o["start"], o["end"] = round(c.start, 2), round(c.end, 2)
     if c.layout in ("auto", "blur", "crop", "split"):
         o["layout"] = c.layout

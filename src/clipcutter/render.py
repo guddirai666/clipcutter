@@ -118,7 +118,10 @@ def _wrap(text: str, font, max_w: int) -> list[str]:
     return lines
 
 
-def draw_box_text(img, text: str, font, center_y: int, W: int, max_w: int = 900):
+SAFE_W = 820   # Reels/Shorts/TikTok: text stays within x≈130-950, y≈270-1250 (outside the apps' own UI)
+
+
+def draw_box_text(img, text: str, font, center_y: int, W: int, max_w: int = SAFE_W):
     """TikTok-style white rounded boxes with black text."""
     lines = _wrap(text, font, max_w)
     lh = int(font.size * 1.25)
@@ -139,10 +142,10 @@ def draw_caption(img, words: list[str], active: int, cfg: dict, W: int):
     fonts = [big_font if i == active else base_font for i in range(len(words))]
     space = int(size * 0.3)
     widths = [measure(w, f) for w, f in zip(words, fonts)]
-    # wrap into lines no wider than 960
+    # wrap into lines no wider than 820: keeps clear of the like/comment/share buttons on the right in Reels
     lines, cur, cur_w = [], [], 0
     for i, w in enumerate(widths):
-        if cur and cur_w + space + w > 960:
+        if cur and cur_w + space + w > SAFE_W:
             lines.append(cur)
             cur, cur_w = [], 0
         cur.append(i)
@@ -192,7 +195,7 @@ def build_overlay(clip: dict, cfg: dict, out_dir: Path) -> Path:
     hook_font = _font(system.bold_font(cfg["captions"].get("font")), 84)
     head_font = _font(system.bold_font(cfg["captions"].get("font")), 52)
     hook_y = {"blur": 470, "split": 672}.get(cfg["layout"], 620)
-    head_y = {"blur": 300, "split": 740}.get(cfg["layout"], 250)
+    head_y = {"blur": 330, "split": 740}.get(cfg["layout"], 330)   # below the top ~270 px the apps cover
 
     # caption events in output time
     events = []  # (t0, t1, words_text, active_idx)
@@ -231,13 +234,13 @@ def build_overlay(clip: dict, cfg: dict, out_dir: Path) -> Path:
             if show_hook:
                 draw_box_text(img, clip["hook"], hook_font, hook_y, W)
             if show_head:
-                draw_box_text(img, clip["hook"], head_font, head_y, W, 860)
+                draw_box_text(img, clip["hook"], head_font, head_y, W, SAFE_W)
             if cap and not show_hook:
                 draw_caption(img, list(cap[2]), cap[3], cfg["captions"], W)
             if cfg.get("watermark"):  # free plan
                 wm_font = _font(system.bold_font(cfg["captions"].get("font")), 34)
                 wm = cfg["watermark"]
-                ImageDraw.Draw(img).text(((W - measure(wm, wm_font)) // 2, H - 70), wm, font=wm_font,
+                ImageDraw.Draw(img).text(((W - measure(wm, wm_font)) // 2, 1340), wm, font=wm_font,  # visible above Reels UI
                                          fill=(255, 255, 255, 150), stroke_width=3, stroke_fill=(0, 0, 0, 120))
             path = frames_dir / f"s{len(cache):04d}.png"
             img.save(path, compress_level=1)

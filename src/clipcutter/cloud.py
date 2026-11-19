@@ -134,7 +134,7 @@ def apply_edits(analysis: dict, moment: dict, opts: dict | None) -> dict:
     s0, e0 = m["start"], m["end"]
     if opts.get("start") is not None and opts.get("end") is not None:
         s = max(0.0, min(float(opts["start"]), T - 3))
-        e = max(s + 5, min(float(opts["end"]), s + 90, T))
+        e = max(s + 5, min(float(opts["end"]), s + 56, T))   # + hook stays under 59 s (Reels/Shorts)
         m["start"], m["end"] = s, e
     if (m["start"], m["end"]) != (s0, e0):   # new range: take words for it from the full captions
         words = [w for w in moment["words"] if m["start"] <= w["s"] < m["end"]]
