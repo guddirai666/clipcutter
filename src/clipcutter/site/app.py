@@ -167,6 +167,16 @@ def share(url: str = "", text: str = ""):
     return RedirectResponse(f"/#new={link}", status_code=303)
 
 
+@app.get("/legal/{page}")
+def legal_page(page: str):
+    from fastapi.responses import HTMLResponse
+    from . import legal
+    body = legal.render(page)
+    if body is None:
+        raise HTTPException(404, "Not found.")
+    return HTMLResponse(body)
+
+
 @app.get("/healthz")
 def health():
     return {"ok": True}

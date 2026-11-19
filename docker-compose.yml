@@ -7,6 +7,10 @@ services:
     restart: unless-stopped
     environment:
       - CLIPCUTTER_SECURE_COOKIES=1
+      - CLIPCUTTER_BUSINESS_NAME=${CLIPCUTTER_BUSINESS_NAME:-ClipCutter}
+      - CLIPCUTTER_EMAIL=${CLIPCUTTER_EMAIL:-}
+      - CLIPCUTTER_PHONE=${CLIPCUTTER_PHONE:-}
+      - CLIPCUTTER_ADDRESS=${CLIPCUTTER_ADDRESS:-}
     volumes: ["./data:/data"]
   worker:
     build: .

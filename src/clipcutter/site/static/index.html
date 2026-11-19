@@ -433,7 +433,9 @@ footer a{color:var(--mut);text-decoration:none}footer a:hover{color:var(--txt)}
     <a class="logo" style="font-size:16px"><span class="mk" style="width:20px;height:20px"><i></i></span>clip<b>cutter</b></a>
     <span>© 2026</span>
     <a href="https://github.com/pandeymynk/clipcutter" target="_blank" rel="noopener">GitHub</a>
-    <a href="#faq">FAQ</a><span style="margin-left:auto">Clip responsibly: only post content you have the rights to.</span>
+    <a href="#faq">FAQ</a><a href="/legal/terms">Terms</a><a href="/legal/privacy">Privacy</a><a href="/legal/refunds">Refunds</a>
+    <a href="/legal/shipping">Delivery</a><a href="/legal/contact">Contact</a>
+    <span style="margin-left:auto">Clip responsibly: only post content you have the rights to.</span>
   </div></footer>
 </div>
 
@@ -515,7 +517,7 @@ function openAuth(mode = "signup"){
       <button class="btn wide" style="margin-top:18px" id="authBtn">${mode === "signup" ? "Create free account" : "Log in"}</button>
       <div class="err" id="authErr" style="text-align:center"></div>
     </form>
-    <div class="fine">${mode === "signup" ? "10 free clips every month · no card needed" : ""}</div>`);
+    <div class="fine">${mode === "signup" ? `10 free clips every month · no card needed<br>By signing up you agree to the <a href="/legal/terms" target="_blank" style="color:var(--mut)">Terms</a> and <a href="/legal/privacy" target="_blank" style="color:var(--mut)">Privacy Policy</a>` : ""}</div>`);
   $$(".seg button").forEach(b => b.onclick = () => openAuth(b.dataset.m));
   setTimeout(() => $("#em") && $("#em").focus(), 50);
   $("#authForm").onsubmit = async e => {
