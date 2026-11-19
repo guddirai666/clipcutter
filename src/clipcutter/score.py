@@ -75,10 +75,28 @@ def speech_signal(words: list[dict], seconds: int) -> np.ndarray:
             rate[t] += 1
             if HYPE_SPEECH.search(w["w"]) or HYPE_HINDI.search(w["w"]) or "!" in w["w"]:
                 hype[t] += 1
-    h = _unit(_smooth(hype, 7) * 7, 3.0)
-    r = _smooth(rate, 5)
-    fast = _unit(r - np.median(r[r > 0]) if (r > 0).any() else r, 2.0)
-    return np.clip(0.75 * h + 0.25 * fast, 0, 1)
+    # scale by this video's own top values (not a fixed cap): a fixed cap saturated at 1.0 on long,
+    # chatty streams, every second tied, and all picks bunched at the start of the video
+    h = _smooth(hype, 15)
+    top = np.percentile(h[h > 0], 99.5) if (h > 0).any() else 1.0
+    h = np.clip(h / max(top, 1e-6), 0, 1)
+    r = _smooth(rate, 9)
+    if (r > 0).any():
+        r = r - np.median(r[r > 0])
+        r = np.clip(r / max(np.percentile(r[r > 0], 99) if (r > 0).any() else 1.0, 1e-6), 0, 1)
+    return np.clip(0.75 * h + 0.25 * r, 0, 1)
+
+
+def replay_signal(heatmap: list[dict] | None, seconds: int) -> np.ndarray | None:
+    """YouTube's "Most replayed" graph (what real viewers rewatch) -> 0..1 per second."""
+    if not heatmap:
+        return None
+    out = np.zeros(seconds, dtype=np.float32)
+    for h in heatmap:
+        a, b = int(h.get("start_time", 0)), int(h.get("end_time", 0)) + 1
+        out[max(0, a):min(seconds, b)] = float(h.get("value") or 0)
+    base = float(np.median(out))
+    return np.clip((out - base) / max(1e-6, 1 - base), 0, 1)
 
 
 def combine(signals: dict[str, np.ndarray | None], weights: dict) -> np.ndarray:

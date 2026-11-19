@@ -38,6 +38,18 @@ Full guide for macOS, Windows and Linux: **[docs/SETUP.md](docs/SETUP.md)** · �
 - 🤖 **Optional AI hooks** with Claude or a free local model (Ollama)
 - 🤝 **Agent-ready**: works with Antigravity, Claude Code, Cursor and others ([AGENTS.md](AGENTS.md))
 
+## Website (multi-user, deployable)
+
+A full web app with a landing page, accounts, monthly plans, a moment preview, a built-in editor (hook text, captions, trim,
+layout) and phone install (PWA). Even 24-hour streams work: it reads captions, chat and the "most replayed" graph,
+then downloads only the minute that becomes a clip.
+
+```bash
+uv run clipcutter site            # http://localhost:8000
+uv run clipcutter site-worker     # background worker
+```
+Deploy on a free Oracle Cloud server or Hetzner: [docs/DEPLOY.md](docs/DEPLOY.md) · design: [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md)
+
 ## Command line
 
 ```bash

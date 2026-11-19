@@ -42,9 +42,24 @@ frames, e.g. `ffmpeg -ss 3 -i output/<id>/clip_01.mp4 -frames:v 1 frame.png`.
 | `tracker.py` | creator tracker: `creators.yaml` + SQLite state, auto-clips new uploads |
 | `server.py` + `web.html` | web app (stdlib HTTP server, one job worker thread, jobs persisted in `.work/jobs.json`) |
 | `dashboard.py` | static HTML dashboard for the tracker |
+| `cloud.py` | **website engine**: text-first analysis (captions + chat + "most replayed"), `render_moment`, editor edits |
+| `site/app.py` | website API (FastAPI): accounts, plans/quotas, videos, clips, editor options |
+| `site/worker.py` | website worker: analyse → render, live-chat enrichment thread, cleanup |
+| `site/db.py` | SQLite schema + plans (`PLANS`) |
+| `site/static/index.html` | landing page + app (single file, vanilla JS), PWA files next to it |
 | `config.py` | defaults; users override with `config.yaml` (see `config.example.yaml`) |
 
-## How a clip is made
+## Website (multi-user)
+
+```bash
+uv run clipcutter site          # http://localhost:8000
+uv run clipcutter site-worker   # in another terminal (one or many)
+uv run clipcutter site-plan you@example.com creator --days 30   # give a plan (until payments exist)
+```
+Design: [docs/SYSTEM_DESIGN.md](docs/SYSTEM_DESIGN.md) · deploy: [docs/DEPLOY.md](docs/DEPLOY.md).
+Key rule: the website never downloads a whole video. It analyses text, then downloads only the ~60 s of a clip.
+
+## How a clip is made (local CLI)
 
 1. **Ingest:** for a URL, `ingest.py` downloads the full video once (fast, ~1 min for 20 min of video) plus the
    platform's **own captions** (YouTube `*-orig` auto-captions, json3 with per-word timing).

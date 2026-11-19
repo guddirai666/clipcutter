@@ -64,6 +64,15 @@ def main() -> None:
     sub.add_parser("dashboard", help="rebuild the dashboard page")
     sub.add_parser("doctor", help="check that everything needed is installed")
 
+    st = sub.add_parser("site", help="run the multi-user website (needs: clipcutter site-worker)")
+    st.add_argument("--port", type=int, default=8000)
+    st.add_argument("--host", default="127.0.0.1")
+    sub.add_parser("site-worker", help="run a website background worker (analyse videos, render clips)")
+    sp = sub.add_parser("site-plan", help="admin: set a user's plan, e.g. site-plan you@x.com creator --days 30")
+    sp.add_argument("email")
+    sp.add_argument("plan", choices=["free", "starter", "creator", "pro"])
+    sp.add_argument("--days", type=int, default=30)
+
     sv = sub.add_parser("serve", help="open the web app (paste links, tracker, clips)")
     sv.add_argument("--port", type=int, default=8787)
     sv.add_argument("--host", default="127.0.0.1", help="0.0.0.0 to allow phones on your Wi-Fi")
@@ -116,6 +125,22 @@ def main() -> None:
         elif args.cmd == "serve":
             from . import server
             server.serve(args.port, args.host, getattr(args, "config", None))
+        elif args.cmd == "site":
+            import uvicorn
+            uvicorn.run("clipcutter.site.app:app", host=args.host, port=args.port, proxy_headers=True,
+                        forwarded_allow_ips="*")
+        elif args.cmd == "site-worker":
+            from .site import worker
+            worker.main(getattr(args, "config", None))
+        elif args.cmd == "site-plan":
+            import time as _t
+            from .site import db as sdb
+            sdb.init()
+            con = sdb.connect()
+            until = None if args.plan == "free" else _t.time() + args.days * 86400
+            n = con.execute("UPDATE users SET plan=?, plan_until=? WHERE email=?",
+                            (args.plan, until, args.email.lower())).rowcount
+            print(f"{args.email}: {args.plan}" + (f" for {args.days} days" if until else "") if n else "no such user")
         elif args.cmd == "doctor":
             sys.exit(doctor())
         elif args.cmd == "dashboard":

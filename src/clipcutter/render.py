@@ -234,6 +234,11 @@ def build_overlay(clip: dict, cfg: dict, out_dir: Path) -> Path:
                 draw_box_text(img, clip["hook"], head_font, head_y, W, 860)
             if cap and not show_hook:
                 draw_caption(img, list(cap[2]), cap[3], cfg["captions"], W)
+            if cfg.get("watermark"):  # free plan
+                wm_font = _font(system.bold_font(cfg["captions"].get("font")), 34)
+                wm = cfg["watermark"]
+                ImageDraw.Draw(img).text(((W - measure(wm, wm_font)) // 2, H - 70), wm, font=wm_font,
+                                         fill=(255, 255, 255, 150), stroke_width=3, stroke_fill=(0, 0, 0, 120))
             path = frames_dir / f"s{len(cache):04d}.png"
             img.save(path, compress_level=1)
             cache[key] = path

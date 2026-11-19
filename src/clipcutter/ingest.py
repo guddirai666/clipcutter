@@ -145,7 +145,8 @@ def caption_words(path: Path) -> list[dict]:
         for i, sg in enumerate(segs):
             s = (t0 + sg.get("tOffsetMs", 0)) / 1000
             e = (t0 + segs[i + 1].get("tOffsetMs", 0)) / 1000 if i + 1 < len(segs) else min(end / 1000, s + 1.2)
-            for k, tok in enumerate(sg["utf8"].split()):   # manual captions put a whole line in one seg
+            text = re.sub(r"\[[^\]]*\]|>>|&gt;&gt;", " ", sg["utf8"])   # [laughter], [music], speaker marks
+            for k, tok in enumerate(text.split()):   # manual captions put a whole line in one seg
                 words.append({"w": tok, "s": round(s, 2), "e": round(max(e, s + 0.15), 2)})
     words.sort(key=lambda w: w["s"])
     # spread tokens that share one timestamp (whole-line segments) evenly across their span
@@ -166,8 +167,12 @@ def caption_words(path: Path) -> list[dict]:
     return words
 
 
-def download_section(url: str, start: float, end: float, dest: Path) -> Path:
-    """Download only [start, end] of the video, cut exactly (re-encoded at the cut points)."""
+def download_section(url: str, start: float, end: float, dest: Path, exact: bool = False) -> Path:
+    """Download only [start, end] of the video.
+
+    exact=False (default): stream copy, no re-encode: fast, a few MB. The MP4 edit list keeps
+    t=0 at `start`, so clip timings stay right. exact=True re-encodes at the cuts, which is slow
+    (minutes), and is only needed for players that ignore edit lists."""
     import yt_dlp
     from yt_dlp.utils import download_range_func
 
@@ -175,11 +180,12 @@ def download_section(url: str, start: float, end: float, dest: Path) -> Path:
     for old in dest.parent.glob(dest.stem + ".*"):
         old.unlink()
     opts = _ydl_opts(
-        format="bv*[height<=1080]+ba/b[height<=1080]/b",
+        format=VIDEO_FORMAT,
         merge_output_format="mp4",
         outtmpl=str(dest.with_suffix(".%(ext)s")),
         download_ranges=download_range_func(None, [(start, end)]),
-        force_keyframes_at_cuts=True,
+        force_keyframes_at_cuts=exact,
+        concurrent_fragment_downloads=8,
     )
     with yt_dlp.YoutubeDL(opts) as ydl:
         ydl.download([url])
@@ -187,3 +193,67 @@ def download_section(url: str, start: float, end: float, dest: Path) -> Path:
     if not got:
         raise RuntimeError(f"section download failed for {url} [{start:.0f}-{end:.0f}]")
     return got[0]
+
+
+# ---------- text-first ingest (website / long videos) ----------
+
+def fetch_meta(url: str, dest: Path, want_chat: bool = False) -> tuple[dict, Path | None, Path | None]:
+    """Video info + the platform's captions (+ chat replay) WITHOUT downloading the video.
+    Returns (info, captions_json3, chat_json). Info includes YouTube's "Most replayed" heatmap."""
+    import yt_dlp
+
+    dest.mkdir(parents=True, exist_ok=True)
+    langs = [".*-orig"] + (["live_chat", "rechat"] if want_chat else [])
+    opts = _ydl_opts(
+        skip_download=True,
+        writesubtitles=True,
+        writeautomaticsub=True,
+        subtitleslangs=langs,
+        subtitlesformat="json3/json/best",
+        outtmpl=str(dest / "meta.%(ext)s"),
+    )
+    with yt_dlp.YoutubeDL(opts) as ydl:  # one instance resolves AND downloads (else YouTube 403)
+        info = ydl.extract_info(url, download=False)
+        if info.get("is_live") or info.get("live_status") in ("is_live", "is_upcoming"):
+            raise RuntimeError("This stream is still live. Try again when the VOD is up.")
+        lang = info.get("language")
+        if lang:  # creator-uploaded captions in the video's language beat auto ones
+            ydl.params["subtitleslangs"] = [lang] + langs
+        ydl.process_ie_result(info, download=True)
+    subs = _pick_subs(dest / "meta.mp4", lang)
+    chat = next((p for p in dest.glob("meta.*") if p.name.endswith((".live_chat.json", ".rechat.json"))), None)
+    return info, subs, chat
+
+
+def download_audio(url: str, dest: Path) -> Path:
+    """Audio only (~50 MB per hour) for videos without captions."""
+    import yt_dlp
+
+    dest.mkdir(parents=True, exist_ok=True)
+    opts = _ydl_opts(format="bestaudio[ext=m4a]/bestaudio/best", outtmpl=str(dest / "audio.%(ext)s"),
+                     concurrent_fragment_downloads=8)
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        path = Path(ydl.prepare_filename(info))
+        if not path.exists():
+            ydl.process_ie_result(info, download=True)
+    return path if path.exists() else next(p for p in dest.glob("audio.*") if p.suffix in MEDIA_EXT)
+
+
+def has_chat_replay(info: dict) -> bool:
+    return any(k in (info.get("subtitles") or {}) for k in ("live_chat", "rechat"))
+
+
+def fetch_chat(url: str, dest: Path, hook=None) -> Path | None:
+    """Live-chat replay only. Can take minutes on long streams (YouTube serves it in small pages),
+    so the website does this in the background after the first moments are shown."""
+    import yt_dlp
+
+    dest.mkdir(parents=True, exist_ok=True)
+    opts = _ydl_opts(skip_download=True, writesubtitles=True, subtitleslangs=["live_chat", "rechat"],
+                     subtitlesformat="json/best", outtmpl=str(dest / "meta.%(ext)s"),
+                     progress_hooks=[hook] if hook else [])   # own hook: runs in a background thread
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        info = ydl.extract_info(url, download=False)
+        ydl.process_ie_result(info, download=True)
+    return next((p for p in dest.glob("meta.*") if p.name.endswith((".live_chat.json", ".rechat.json"))), None)
