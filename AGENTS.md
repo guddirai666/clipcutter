@@ -69,6 +69,8 @@ Key rule: the website never downloads a whole video. It analyses text, then down
    speech hype (English + Hindi hype words, `!`, fast talking). `score.combine` weights them (`config.weights`).
 4. **Moments:** top peaks, then `score.shape` snaps start/end to sentence boundaries (15–55 s).
 5. **Hook text:** `writer.write` (LLM if configured, else templates matched to language and topic).
+   `--hook "text"` replaces it, and `--at START-END` (repeatable) skips steps 3–4 entirely: the given
+   spans are rendered as-is, `cfg["at"]` in the config, no start/end snapping.
 6. **Render:** `render.render` builds one ffmpeg filter graph: hook segment (zoomed) + main segment,
    then the layout (blur / crop / split facecam), then a PNG-sequence overlay (captions + hook box), plus a
    synthesized bass "boom" and loudness normalization to -14 LUFS.

@@ -117,19 +117,37 @@ def run(target: str, cfg: dict, chat: str | None = None, out_sub: str = "") -> t
         "speech": score.speech_signal(all_words, T) if all_words else None,
     }
     base = score.combine(signals, w)
-    n = cfg["clips"]
-    cands = score.candidates(base, max(6, n * 3), gap=int(cfg["max_len"] * 0.6))
-    log(f"score: {len(cands)} candidate moments")
+    # --at: the user already picked the moments, so don't guess (and don't move their start/end)
+    picked = [(max(0.0, min(float(a), info["duration"] - 1)), min(float(b), info["duration"]))
+              for a, b in (cfg.get("at") or [])]
+    n = len(picked) if picked else cfg["clips"]
+    if picked:
+        cands = [score.Moment(peak=int((a + b) / 2), base=1.0, start=a, end=b) for a, b in picked]
+        log(f"using {len(cands)} hand-picked moment(s) from --at, skipping moment detection")
+    else:
+        cands = score.candidates(base, max(6, n * 3), gap=int(cfg["max_len"] * 0.6))
+        log(f"score: {len(cands)} candidate moments")
 
     for i, m in enumerate(cands, 1):
-        a = max(0.0, m.peak - cfg["max_len"] - 5)
-        b = min(info["duration"], m.peak + 20)
-        if full:
-            words = [x for x in all_words if a <= x["s"] <= b]
+        if picked:
+            lo, hi = max(0, int(m.start)), max(1, min(T - 1, int(m.end) - 1))
+            m.peak = lo + int(np.argmax(db[lo:hi + 1]))       # hook = loudest second inside the pick
+            m.base = float(np.mean(base[lo:hi + 1]))
+            if all_words:
+                words = [x for x in all_words if m.start <= x["s"] < m.end]
+            else:                                   # no captions: transcribe only this window
+                progress(f"Listening to moment {i} of {len(cands)}…", _span(TRANSCRIBE, (i - 1) / len(cands)))
+                words = _transcribe_cached(pcm, m.start, m.end, cfg, work)
+            m.words = words
         else:
-            progress(f"Listening to moment {i} of {len(cands)}…", _span(TRANSCRIBE, (i - 1) / len(cands)))
-            words = _transcribe_cached(pcm, a, b, cfg, work)
-        score.shape(m, words, cfg["min_len"], cfg["max_len"], info["duration"])
+            a = max(0.0, m.peak - cfg["max_len"] - 5)
+            b = min(info["duration"], m.peak + 20)
+            if full:
+                words = [x for x in all_words if a <= x["s"] <= b]
+            else:
+                progress(f"Listening to moment {i} of {len(cands)}…", _span(TRANSCRIBE, (i - 1) / len(cands)))
+                words = _transcribe_cached(pcm, a, b, cfg, work)
+            score.shape(m, words, cfg["min_len"], cfg["max_len"], info["duration"])
         m.speech = score.speech_hype(m)
         m.score = round((1 - w["speech"]) * m.base + w["speech"] * m.speech, 4)
         for k, sig in signals.items():
@@ -139,7 +157,7 @@ def run(target: str, cfg: dict, chat: str | None = None, out_sub: str = "") -> t
             m.reasons.append("speech")
         print(f"   {i:2d}. peak {m.peak // 60}:{m.peak % 60:02d}  score {m.score:.2f}  {'+'.join(m.reasons) or '-'}")
 
-    chosen = score.pick(cands, n)
+    chosen = cands if picked else score.pick(cands, n)
     log(f"making {len(chosen)} clips")
     index = []
     used_hooks: set[str] = set()
@@ -168,6 +186,8 @@ def run(target: str, cfg: dict, chat: str | None = None, out_sub: str = "") -> t
         transcript = " ".join(x["w"] for x in m.words)
         chat_near = [msg for s in range(m.peak - 3, m.peak + 8) for msg in chat_samples.get(s, [])]
         meta = writer.write(transcript, chat_near, cfg, seed=m.peak, title=src.title, avoid=used_hooks)
+        if cfg.get("hook_text"):                    # --hook: you wrote the hook, use it as-is
+            meta["hook"] = cfg["hook_text"]
         used_hooks.add(meta["hook"].lower())
 
         clip = {"start": m.start, "end": m.end, "peak": float(peak), "hook_start": hook_start,
