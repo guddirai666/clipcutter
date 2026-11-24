@@ -54,6 +54,8 @@ Deploy on a free Oracle Cloud server or Hetzner: [docs/DEPLOY.md](docs/DEPLOY.md
 
 ```bash
 uv run clipcutter run "https://www.youtube.com/watch?v=..." --clips 3
+uv run clipcutter run "<url>" --at 12:30-13:10 --hook "bhai ye baby kiska hai 😳"   # your moment, your hook
+uv run python scripts/find_time.py "<url>" "chor ke ghar mein chori"              # quote -> exact timecode
 uv run clipcutter discover "gta 6 live"
 uv run clipcutter add https://www.youtube.com/@channel --keyword gta
 uv run clipcutter track --every 30

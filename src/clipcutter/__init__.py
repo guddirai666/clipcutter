@@ -28,6 +28,39 @@ def _enable_hindi_text() -> None:
     os.execve(sys.executable, [sys.executable] + sys.argv, env)
 
 
+def _seconds(text: str) -> float:
+    """"750" or "12:41" or "1:02:41" -> seconds."""
+    total = 0.0
+    parts = [p for p in text.strip().replace(",", ".").split(":") if p != ""]
+    if not parts or len(parts) > 3:
+        raise ValueError(f"not a time: {text!r}")
+    for p in parts:
+        total = total * 60 + float(p)
+    return total
+
+
+def _at_spans(specs: list[str], cfg: dict) -> list[list[float]]:
+    """--at values -> [[start, end], …], kept inside min_len/max_len so the renderer can't choke."""
+    spans: list[list[float]] = []
+    for spec in specs:
+        head, _, tail = spec.partition("-")
+        try:
+            start = _seconds(head)
+            end = _seconds(tail) if tail.strip() else start + min(40.0, cfg["max_len"])
+        except ValueError:
+            raise SystemExit(f"--at {spec!r}: use START-END like 12:30-13:10")
+        if end <= start:
+            raise SystemExit(f"--at {spec!r}: end must be after start")
+        if end - start < cfg["min_len"]:
+            end = start + cfg["min_len"]
+            print(f"--at {spec}: a bit short, stretched to {cfg['min_len']}s")
+        elif end - start > cfg["max_len"]:
+            end = start + cfg["max_len"]
+            print(f"--at {spec}: a bit long, trimmed to {cfg['max_len']}s")
+        spans.append([round(start, 2), round(end, 2)])
+    return spans
+
+
 def main() -> None:
     _enable_hindi_text()
     p = argparse.ArgumentParser(prog="clipcutter", description="Turn streams into ready-to-post clips.")
@@ -36,6 +69,10 @@ def main() -> None:
     r = sub.add_parser("run", help="clip one link (YouTube, Twitch, Kick, …) or a local video file")
     r.add_argument("target", help="URL or path to a video file")
     r.add_argument("--chat", help="chat log file (optional)")
+    r.add_argument("--at", action="append", metavar="START-END",
+                   help="clip exactly this part and skip moment detection, e.g. --at 12:30-13:10 "
+                        "(seconds or mm:ss or hh:mm:ss; repeatable)")
+    r.add_argument("--hook", help="hook text to use instead of the generated one")
     _common(r)
 
     a = sub.add_parser("add", help="track a creator (channel URL)")
@@ -88,6 +125,11 @@ def main() -> None:
         cfg["llm"]["provider"] = args.llm
     if getattr(args, "whisper", None):
         cfg["whisper_model"] = args.whisper
+    if getattr(args, "at", None):
+        cfg["at"] = _at_spans(args.at, cfg)
+        cfg["clips"] = len(cfg["at"])
+    if getattr(args, "hook", None):
+        cfg["hook_text"] = args.hook
 
     try:
         if args.cmd == "run":
